@@ -1,0 +1,11 @@
+# secrets
+.env
+
+# generated projects (videos, assets, manifests)
+projects/
+
+# python
+__pycache__/
+*.pyc
+.venv/
+venv/
