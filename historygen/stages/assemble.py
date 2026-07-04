@@ -27,6 +27,10 @@ def _build_scene_clip(manifest: Manifest, scene: Scene) -> Path:
     seconds = _scene_seconds(scene)
     base = assets / f"clip_{scene.id:02d}_base.mp4"
     asset = scene.visual_asset
+    if not asset or not Path(asset).exists():
+        candidate = assets / f"visual_{scene.id:02d}.jpg"
+        if candidate.exists():
+            asset = str(candidate)
 
     if asset and scene.visual_is_video and Path(asset).exists():
         ff.video_to_clip(Path(asset), base, seconds)
@@ -94,11 +98,14 @@ def _generate_metadata(manifest: Manifest) -> None:
     resp = client.messages.create(
         model=SETTINGS.models.anthropic_model,
         max_tokens=1500,
-        system="You write Turkish YouTube Shorts metadata. Be punchy and SEO-aware.",
+        system=(
+            "You write YouTube Shorts metadata (title, description, hashtags) in the "
+            "SAME LANGUAGE as the narration you're given. Be punchy and SEO-aware."
+        ),
         output_config={"format": {"type": "json_schema", "schema": schema}},
         messages=[{"role": "user", "content":
-            f"Konu: {project.topic}\nAnlatım: {narration}\n\n"
-            "Türkçe başlık, açıklama ve 5-8 hashtag üret."}],
+            f"Topic: {project.topic}\nNarration: {narration}\n\n"
+            "Generate a title, description, and 5-8 hashtags, matching the narration's language."}],
     )
     data = json.loads(next(b.text for b in resp.content if b.type == "text"))
     project.title = data.get("title", project.title)

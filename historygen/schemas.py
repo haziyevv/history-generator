@@ -23,6 +23,12 @@ class VisualType(str, Enum):
     TACTICAL_MAP = "tactical_map"   # base map + animated troop arrows
 
 
+class VisualDifficulty(str, Enum):
+    EASY = "easy"      # atmosphere, landscape, crowd, stadium → ComfyUI
+    MEDIUM = "medium"  # character scenes, period costumes, buildings → fal.ai
+    HARD = "hard"      # precise action shots, multi-character compositions → gpt-image-2
+
+
 class Scene(BaseModel):
     id: int
     # Turkish narration spoken in this scene.
@@ -33,6 +39,7 @@ class Scene(BaseModel):
     # even when the narration is Turkish).
     visual_prompt: str
     visual_type: VisualType
+    visual_difficulty: VisualDifficulty = VisualDifficulty.EASY
     # Optional cue describing the desired SFX / music mood for this beat.
     audio_cue: str = ""
     # Script's estimate; replaced by the real narration length after TTS.
@@ -53,6 +60,9 @@ class Project(BaseModel):
     description: str = ""
     hashtags: list[str] = Field(default_factory=list)
     scenes: list[Scene] = Field(default_factory=list)
+    voice_id: Optional[str] = None       # locked in on first narration run
+    voice_gender: str = "female"          # male | female
+    language: str = "tr"                  # ISO 639-1 — drives both script and voice
     music_asset: Optional[str] = None
     captions_file: Optional[str] = None
     final_video: Optional[str] = None
@@ -67,8 +77,7 @@ def script_output_schema() -> dict[str, Any]:
             "title": {"type": "string", "description": "Catchy Turkish title for the short."},
             "scenes": {
                 "type": "array",
-                "minItems": 6,
-                "maxItems": 14,
+                "minItems": 1,
                 "items": {
                     "type": "object",
                     "additionalProperties": False,
@@ -89,6 +98,15 @@ def script_output_schema() -> dict[str, Any]:
                             "type": "string",
                             "enum": [v.value for v in VisualType],
                         },
+                        "visual_difficulty": {
+                            "type": "string",
+                            "enum": ["easy", "medium", "hard"],
+                            "description": (
+                                "easy: atmosphere/landscape/crowd/stadium (ComfyUI); "
+                                "medium: characters, costumes, buildings (fal.ai); "
+                                "hard: precise action shots, specific poses, multi-character interactions (gpt-image-2)."
+                            ),
+                        },
                         "audio_cue": {
                             "type": "string",
                             "description": "Short mood/SFX cue, e.g. 'tense war drums'.",
@@ -103,6 +121,7 @@ def script_output_schema() -> dict[str, Any]:
                         "on_screen_text",
                         "visual_prompt",
                         "visual_type",
+                        "visual_difficulty",
                         "audio_cue",
                         "est_seconds",
                     ],

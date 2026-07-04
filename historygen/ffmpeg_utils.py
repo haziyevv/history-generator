@@ -60,22 +60,31 @@ def static_clip(image: Path, out: Path, seconds: float) -> None:
 
 
 def still_to_clip(image: Path, out: Path, seconds: float, zoom_in: bool = True) -> None:
-    """Ken Burns: scale a still to fill 9:16 and slowly zoom over `seconds`."""
+    """Ken Burns on foreground; blurred copy of the same image fills the background."""
     frames = max(1, int(seconds * R.fps))
-    # zoom from 1.0 -> 1.12 (or reverse). Oversample to 4K first for smooth zoompan.
     if zoom_in:
         z = "min(zoom+0.0009,1.12)"
     else:
         z = "if(lte(zoom,1.0),1.12,max(1.0,zoom-0.0009))"
-    vf = (
-        f"scale={R.width*2}:{R.height*2}:force_original_aspect_ratio=increase,"
-        f"crop={R.width*2}:{R.height*2},"
+    W, H = R.width, R.height
+    # Background: scale to fill the canvas, blur heavily.
+    bg = (
+        f"scale={W}:{H}:force_original_aspect_ratio=increase,"
+        f"crop={W}:{H},"
+        f"gblur=sigma=30"
+    )
+    # Foreground: fit the whole image inside the canvas (no crop), then Ken Burns.
+    fg = (
+        f"scale={W*2}:{H*2}:force_original_aspect_ratio=decrease,"
+        f"pad={W*2}:{H*2}:(ow-iw)/2:(oh-ih)/2:black@0,"
         f"zoompan=z='{z}':d={frames}:x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':"
-        f"s={R.width}x{R.height}:fps={R.fps}"
+        f"s={W}x{H}:fps={R.fps}"
     )
     _run([
-        "ffmpeg", "-y", "-loop", "1", "-i", str(image),
-        "-t", f"{seconds:.3f}", "-vf", vf,
+        "ffmpeg", "-y", "-loop", "1", "-i", str(image), "-loop", "1", "-i", str(image),
+        "-t", f"{seconds:.3f}",
+        "-filter_complex",
+        f"[0:v]{bg}[bg];[1:v]{fg}[fg];[bg][fg]overlay=(main_w-overlay_w)/2:(main_h-overlay_h)/2",
         "-pix_fmt", "yuv420p", str(out),
     ])
 

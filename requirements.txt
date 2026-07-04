@@ -1,5 +1,6 @@
 anthropic>=0.40
 elevenlabs>=1.50
+openai>=1.30
 fal-client>=0.5
 requests>=2.31
 Pillow>=10.0

@@ -7,6 +7,9 @@ Commands:
   run <slug> --force     ignore the cache and regenerate everything
   status <slug>          print the project's current state
   list                   list all projects
+  translate <slug> "<topic>" [--language X]
+                          clone a finished project into another language,
+                          reusing its visuals (default language: English)
 """
 
 from __future__ import annotations
@@ -17,11 +20,17 @@ import sys
 from historygen.config import PROJECTS_DIR, SETTINGS
 from historygen.manifest import Manifest
 from historygen.pipeline import STAGE_NAMES, run_all
-from historygen.stages import script
+from historygen.stages import captions, music, narration, script, translate
+from historygen.stages import assemble as assemble_stage
 
 
 def _cmd_new(args: argparse.Namespace) -> int:
     manifest = Manifest.create(args.topic)
+    if args.language:
+        manifest.project.language = args.language
+    if args.gender:
+        manifest.project.voice_gender = args.gender
+    manifest.save()
     print(f"Created project '{manifest.slug}' at {manifest.dir}")
     script.run(manifest)
     print(
@@ -37,6 +46,14 @@ def _cmd_run(args: argparse.Namespace) -> int:
     if args.stage and args.stage not in STAGE_NAMES:
         print(f"Unknown stage '{args.stage}'. Choose from: {', '.join(STAGE_NAMES)}")
         return 2
+    # Apply voice gender/language overrides before running (clears locked voice_id).
+    if args.gender or args.language:
+        if args.gender:
+            manifest.project.voice_gender = args.gender
+        if args.language:
+            manifest.project.voice_language = args.language
+        manifest.project.voice_id = None  # force re-pick with new settings
+        manifest.save()
     run_all(manifest, only=args.stage, force=args.force)
     if manifest.project.final_video:
         print(f"\nFinal video: {manifest.project.final_video}")
@@ -53,8 +70,22 @@ def _cmd_status(args: argparse.Namespace) -> int:
     print(f"Stages done: {', '.join(manifest.stage_cache) or '(none)'}")
     print(f"Final:   {p.final_video or '(not rendered)'}")
     print("\nService keys configured:")
-    for svc in ("anthropic", "elevenlabs", "fal"):
+    for svc in ("anthropic", "elevenlabs", "openai"):
         print(f"  {svc:12} {'yes' if SETTINGS.has(svc) else 'NO (placeholder mode)'}")
+    return 0
+
+
+def _cmd_translate(args: argparse.Namespace) -> int:
+    manifest = translate.clone_translated(args.slug, args.topic, args.language)
+    print(
+        f"\nCreated '{manifest.slug}'. Now generating narration/captions/music/assemble..."
+    )
+    narration.run(manifest)
+    captions.run(manifest)
+    music.run(manifest)
+    assemble_stage.run(manifest)
+    if manifest.project.final_video:
+        print(f"\nFinal video: {manifest.project.final_video}")
     return 0
 
 
@@ -74,12 +105,16 @@ def build_parser() -> argparse.ArgumentParser:
 
     p_new = sub.add_parser("new", help="create a project and generate its script")
     p_new.add_argument("topic", help="documentary topic, e.g. \"Osmanlı'nın kuruluşu\"")
+    p_new.add_argument("--language", default="tr", help="script + voice language code (default: tr)")
+    p_new.add_argument("--gender", choices=["male", "female"], default="female", help="voice gender")
     p_new.set_defaults(func=_cmd_new)
 
     p_run = sub.add_parser("run", help="run the pipeline for a project")
     p_run.add_argument("slug")
     p_run.add_argument("--stage", help="run only this stage")
     p_run.add_argument("--force", action="store_true", help="ignore cache; regenerate")
+    p_run.add_argument("--gender", choices=["male", "female"], help="voice gender")
+    p_run.add_argument("--language", help="voice language code, e.g. tr, en")
     p_run.set_defaults(func=_cmd_run)
 
     p_status = sub.add_parser("status", help="show a project's state")
@@ -88,6 +123,16 @@ def build_parser() -> argparse.ArgumentParser:
 
     p_list = sub.add_parser("list", help="list all projects")
     p_list.set_defaults(func=_cmd_list)
+
+    p_translate = sub.add_parser(
+        "translate", help="clone a project into another language, reusing its visuals"
+    )
+    p_translate.add_argument("slug", help="source project slug")
+    p_translate.add_argument("topic", help="new project topic (used for the new slug)")
+    p_translate.add_argument(
+        "--language", default="English", help="target language (default: English)"
+    )
+    p_translate.set_defaults(func=_cmd_translate)
 
     return parser
 
