@@ -41,45 +41,117 @@ cp .env.example .env                       # then add your keys (optional to sta
 Keys (all optional; add as you go): `ANTHROPIC_API_KEY`, `ELEVENLABS_API_KEY`
 (+ optional `ELEVENLABS_VOICE_ID`), `OPENAI_API_KEY`.
 
-## Usage
+## Creating a video (content-manager guide)
+
+> **Making videos day-to-day?** See **[CONTENT_GUIDE.md](CONTENT_GUIDE.md)** — a
+> non-technical, example-by-example walkthrough of every option. The section below is a
+> condensed version.
+
+
+Every video is made with the same two steps — **`new`** (generate + review the script) then
+**`run`** (produce the video). **Any topic works — you don't have to categorise it.** By
+default the script style is `auto`: the model reads your topic and picks the best way to
+tell it (historical dates, modern photos, stat cards, maps — whatever fits). The only choice
+you normally make is length/format:
+
+- **Short** (default) — vertical, < 60s.
+- **Video** — longer (`--minutes N`), any shape (`--orientation`).
+
+If you want to *force* a style you can still pass `--genre historical` or `--genre
+sociological`, but you never have to.
+
+### The two steps
 
 ```bash
-# 1. create a project + generate the script, then REVIEW projects/<slug>/manifest.json
-python -m historygen new "Osmanlı Devleti'nin kuruluşu (1299)"
+# 1. create the project and generate its script — then OPEN projects/<slug>/manifest.json
+#    and review/edit the scene narration & visuals BEFORE spending money on generation
+python -m historygen new "<topic>" [options]
 
-# 2. run the rest of the pipeline (resumable; re-run safely)
+# 2. produce narration, visuals, captions, music and assemble the final video (resumable)
 python -m historygen run <slug>
+```
 
-# handy:
-python -m historygen run <slug> --stage visuals   # one stage only
-python -m historygen run <slug> --force            # ignore cache, regenerate
-python -m historygen status <slug>
-python -m historygen list
+`new` prints the `<slug>` it created. The finished video is `projects/<slug>/final.mp4` and the
+title/description/hashtags are in `projects/<slug>/metadata.json`.
+
+### Recipes
+
+**Short, any topic** (the default; ~55s vertical 9:16 — auto style)
+```bash
+python -m historygen new "How coffee changed the world"
+python -m historygen run <slug>
+```
+
+**Video, any topic** (longer; set the length with `--minutes`)
+```bash
+python -m historygen new "The history of the internet" --minutes 5
+python -m historygen run <slug>
+```
+
+**Video, landscape 16:9** (e.g. for YouTube)
+```bash
+python -m historygen new "Why cities feel lonely" --minutes 8 --orientation horizontal
+python -m historygen run <slug>
+```
+
+**English, male voice** (any recipe — override language & voice)
+```bash
+python -m historygen new "The fall of Constantinople" --language en --gender male
+python -m historygen run <slug>
+```
+
+**Forcing a style** (optional — override `auto`)
+```bash
+python -m historygen new "Osmanlı'nın kuruluşu" --genre historical
+python -m historygen new "Yalnızlık salgını" --genre sociological
+```
+
+### All `new` options
+
+| Flag | Values | Default | Purpose |
+|------|--------|---------|---------|
+| `topic` (positional) | any string | — | The subject of the video (also seeds the slug) |
+| `--genre` | `auto`, `historical`, `sociological` | `auto` | Leave off to let the model pick the style; set it only to force one |
+| `--minutes` | number | `~0.9` (≈55s, a Short) | Target spoken length. Leave off for a Short; set it for a longer Video (drives scene count) |
+| `--orientation` | `vertical`, `horizontal`, `square` | `vertical` | Frame shape: 9:16 Short, 16:9 landscape, or 1:1 |
+| `--language` | code, e.g. `tr`, `en` | `tr` | Script + narration language |
+| `--gender` | `male`, `female` | `female` | Narration voice gender |
+
+> **Short vs. Video:** a *Short* is just the default — vertical and under a minute. Passing
+> `--minutes` with a bigger number (and optionally `--orientation horizontal`) is what makes a
+> longer, wide *Video*. Nothing else in the pipeline changes.
+
+### Genre / style
+
+- **auto** (default) — the model reads your topic and picks the best presentation, mixing any
+  of the visual types below as they fit. Works for any subject; you rarely need anything else.
+- **historical** — force step-by-step history with dates/places; visuals use AI images,
+  archive paintings/maps, and tactical maps.
+- **sociological** — force social-issue commentary (hook → tension → turn → takeaway). Visuals
+  use photorealistic modern AI images plus **stat cards**: a `stat_card` visual type rendered
+  locally with Pillow (big number + label, no image API needed).
+
+Everything downstream (narration, captions, music, assembly, `translate`) is genre-agnostic
+and works the same for all three.
+
+### `run` and the other commands
+
+```bash
+python -m historygen run <slug>                    # full pipeline (resumable; re-run safely)
+python -m historygen run <slug> --stage visuals    # re-run one stage only
+                                                   #   (script|narration|visuals|captions|music|assemble)
+python -m historygen run <slug> --force            # ignore cache, regenerate everything
+python -m historygen run <slug> --gender male      # change voice gender, then re-run
+python -m historygen run <slug> --language en      # change narration language, then re-run
+
+python -m historygen status <slug>                 # topic, genre, format, stages done, keys configured
+python -m historygen list                          # list all project slugs
 
 # clone a finished project into another language, reusing its visuals as-is
 python -m historygen translate <slug> "History of Christianity" --language English
 ```
 
-The finished video is `projects/<slug>/final.mp4`; metadata is `projects/<slug>/metadata.json`.
-
-### Genres
-
-`new` takes `--genre` to switch the script style and visual palette:
-
-```bash
-python -m historygen new "Osmanlı'nın kuruluşu" --genre historical      # default
-python -m historygen new "Yalnızlık salgını"   --genre sociological
-```
-
-- **historical** (default) — step-by-step history with dates/places; visuals use AI images,
-  archive paintings/maps, and tactical maps. Unchanged from before.
-- **sociological** — social-issue commentary (hook → tension → turn → takeaway). Visuals use
-  photorealistic modern AI images plus **stat cards**: a new `stat_card` visual type rendered
-  locally with Pillow (big number + label, no image API needed). The script model fills
-  `stat_value` / `stat_label` per stat scene.
-
-Everything downstream (narration, captions, music, assembly, `translate`) is genre-agnostic
-and works the same for both.
+Overriding `--gender`/`--language` on `run` re-picks the voice and re-runs affected stages.
 
 ### Manually swapping a wrong image
 

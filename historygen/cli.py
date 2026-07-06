@@ -1,9 +1,10 @@
 """Command-line interface: `python -m historygen <command>`.
 
 Commands:
-  new "<topic>" [--genre historical|sociological] [--language X] [--gender male|female]
+  new "<topic>" [--genre auto|historical|sociological] [--language X] [--gender male|female]
                 [--orientation vertical|horizontal|square] [--minutes N]
-                          create a project + generate the script (review checkpoint)
+                          create a project + generate the script (review checkpoint).
+                          Any topic works — genre defaults to 'auto' (model picks the style).
   run <slug>             run the full pipeline (resumable; skips fresh stages)
   run <slug> --stage X   run only stage X (script|narration|visuals|captions|music|assemble)
   run <slug> --force     ignore the cache and regenerate everything
@@ -120,8 +121,8 @@ def build_parser() -> argparse.ArgumentParser:
     p_new.add_argument("--language", default="tr", help="script + voice language code (default: tr)")
     p_new.add_argument("--gender", choices=["male", "female"], default="female", help="voice gender")
     p_new.add_argument(
-        "--genre", choices=[g.value for g in Genre], default="historical",
-        help="video style (default: historical)",
+        "--genre", choices=[g.value for g in Genre], default="auto",
+        help="video style (default: auto — the model picks the best style for your topic)",
     )
     p_new.add_argument(
         "--orientation", choices=["vertical", "horizontal", "square"], default="vertical",

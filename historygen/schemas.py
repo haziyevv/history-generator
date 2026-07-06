@@ -16,6 +16,7 @@ from pydantic import BaseModel, Field
 
 
 class Genre(str, Enum):
+    AUTO = "auto"                    # open: model picks the best style for any topic (default)
     HISTORICAL = "historical"        # step-by-step history with dates/places
     SOCIOLOGICAL = "sociological"    # social-issue commentary, anchored by stats
 
@@ -72,7 +73,7 @@ class Project(BaseModel):
     voice_id: Optional[str] = None       # locked in on first narration run
     voice_gender: str = "female"          # male | female
     language: str = "tr"                  # ISO 639-1 — drives both script and voice
-    genre: Genre = Genre.HISTORICAL       # drives the script style + visual palette
+    genre: Genre = Genre.AUTO             # drives the script style + visual palette
     orientation: str = "vertical"         # vertical (9:16) | horizontal (16:9) | square
     target_seconds: int = 55              # desired total spoken length (drives scene count)
     music_asset: Optional[str] = None
