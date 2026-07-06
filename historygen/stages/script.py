@@ -37,6 +37,22 @@ _NUMBER_RULES = {
 }
 
 _USER_PROMPTS = {
+    Genre.AUTO: {
+        "tr": lambda topic: (
+            f"Konu: {topic}\n\n"
+            "Bu konu için en uygun anlatım biçimini kendin seç ve dikey bir kısa video "
+            "senaryosu üret. Konu neyi gerektiriyorsa onu yap: tarihsel bir olaysa tarihleri "
+            "ve yerleri ver; toplumsal bir olguysa çarpıcı istatistiklerle işle; bilim, doğa, "
+            "biyografi ya da başka bir şeyse ona uygun akış kur. Güçlü bir kancayla başla."
+        ),
+        "en": lambda topic: (
+            f"Topic: {topic}\n\n"
+            "Choose the best way to tell THIS topic and write a vertical short video script. "
+            "Do whatever the subject calls for: if it's history, give dates and places; if it's "
+            "a social issue, anchor it with striking statistics; if it's science, nature, a "
+            "biography or anything else, structure it accordingly. Open with a strong hook."
+        ),
+    },
     Genre.HISTORICAL: {
         "tr": lambda topic: (
             f"Konu: {topic}\n\n"
@@ -74,6 +90,11 @@ def _user_prompt(topic: str, language: str, genre: Genre) -> str:
 
 
 _COMMON_TAIL = (
+    "When a scene features a real, recognisable public figure (athlete, politician, "
+    "musician, actor, historical leader, etc.), NAME them directly in visual_prompt — "
+    "e.g. 'Erling Haaland in a sky-blue Manchester City kit', 'Kylian Mbappé in a white "
+    "Real Madrid kit' — never a generic euphemism like 'a tall blond striker' or 'a French "
+    "forward'. The name is what makes the image recognisable. "
     "on_screen_text is a tiny overlay: a year, a number, or a place name "
     "(leave empty for stat_card scenes — the card already shows its text). "
     "Leave stat_value and stat_label empty ('') for every non stat_card scene. "
@@ -83,6 +104,31 @@ _COMMON_TAIL = (
     "'hard' for precise action shots, specific poses, controversial moments, "
     "multi-character interactions requiring exact composition (best model). "
 )
+
+
+def _auto_system(lang_name: str, number_rule: str, length_rule: str) -> str:
+    return (
+        f"You are a versatile short-form documentary scriptwriter for YouTube / Reels / "
+        f"TikTok. You write in {lang_name}. You handle ANY topic — history, science, nature, "
+        "technology, biography, society, culture — and you adapt the storytelling to whatever "
+        "the subject needs. First decide the natural shape of this story, then write it: a "
+        "clear hook, steady development, and a satisfying close. Be concrete — use real dates, "
+        "numbers, names and places when they exist. "
+        + number_rule + length_rule + " "
+        "Pick the best visual_type per scene from ALL of these, mixing freely as the topic fits:\n"
+        "- ai_image: atmosphere, portraits, landscapes, scenes, crowds (historical OR modern)\n"
+        "- archive_painting: a real public-domain painting, when one fits a historical beat\n"
+        "- archive_map: a real historical map of a region/era\n"
+        "- tactical_map: troop movements / arrows over a map (battles, campaigns, spread)\n"
+        "- stat_card: whenever a beat is built around a single striking number. Put the number "
+        "in stat_value (short, e.g. '73%', '3×', '1/2') and a few words in stat_label. Still "
+        "write the spoken sentence in narration.\n"
+        "Use archive_painting / archive_map / tactical_map ONLY for genuinely historical or "
+        "geographic topics; for modern/social/scientific topics prefer ai_image + stat_card. "
+        "visual_prompt must be in ENGLISH (image models prefer English) and precise: name exact "
+        "flags, uniforms, emblems, or the exact modern scene — never a vague 'banner' or 'person'. "
+        + _COMMON_TAIL
+    )
 
 
 def _historical_system(lang_name: str, number_rule: str, length_rule: str) -> str:
@@ -154,7 +200,9 @@ def _build_system(language: str, genre: Genre, target_seconds: int) -> str:
     length_rule = _length_guidance(target_seconds, lang_name)
     if genre == Genre.SOCIOLOGICAL:
         return _sociological_system(lang_name, number_rule, length_rule)
-    return _historical_system(lang_name, number_rule, length_rule)
+    if genre == Genre.HISTORICAL:
+        return _historical_system(lang_name, number_rule, length_rule)
+    return _auto_system(lang_name, number_rule, length_rule)
 
 
 def _placeholder_script(topic: str, genre: Genre) -> dict:
