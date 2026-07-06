@@ -46,6 +46,13 @@ def probe_duration(path: str | Path) -> float:
         return 0.0
 
 
+def _frames(seconds: float) -> int:
+    """Exact frame count for a scene. Every clip builder MUST output exactly this many
+    frames: the voice track is sample-accurate, so any missing/extra video frames shift
+    the burned-in captions against the audio (worse with every concatenated scene)."""
+    return max(1, round(seconds * R.fps))
+
+
 def static_clip(image: Path, out: Path, seconds: float) -> None:
     """A still image held (no zoom) for `seconds` — used for placeholders/maps."""
     vf = (
@@ -53,15 +60,22 @@ def static_clip(image: Path, out: Path, seconds: float) -> None:
         f"crop={R.width}:{R.height},fps={R.fps}"
     )
     _run([
-        "ffmpeg", "-y", "-loop", "1", "-i", str(image),
-        "-t", f"{seconds:.3f}", "-vf", vf,
+        "ffmpeg", "-y", "-framerate", str(R.fps), "-loop", "1", "-i", str(image),
+        "-frames:v", str(_frames(seconds)), "-vf", vf,
         "-pix_fmt", "yuv420p", str(out),
     ])
 
 
 def still_to_clip(image: Path, out: Path, seconds: float, zoom_in: bool = True) -> None:
-    """Ken Burns on foreground; blurred copy of the same image fills the background."""
-    frames = max(1, int(seconds * R.fps))
+    """Ken Burns on foreground; blurred copy of the same image fills the background.
+
+    NOTE on framerates: `-loop 1` image inputs default to 25fps unless `-framerate` is
+    set, and the overlay output inherits the background branch's rate. That silently
+    produced 25/30 of the expected frames per clip (~1.5s of video missing per scene),
+    desyncing captions from the sample-exact voice track. Hence: explicit `-framerate`
+    on BOTH inputs, `fps` normalization after the overlay, and an exact `-frames:v` cut.
+    """
+    frames = _frames(seconds)
     if zoom_in:
         z = "min(zoom+0.0009,1.12)"
     else:
@@ -81,10 +95,13 @@ def still_to_clip(image: Path, out: Path, seconds: float, zoom_in: bool = True) 
         f"s={W}x{H}:fps={R.fps}"
     )
     _run([
-        "ffmpeg", "-y", "-loop", "1", "-i", str(image), "-loop", "1", "-i", str(image),
-        "-t", f"{seconds:.3f}",
+        "ffmpeg", "-y",
+        "-framerate", str(R.fps), "-loop", "1", "-i", str(image),
+        "-framerate", str(R.fps), "-loop", "1", "-i", str(image),
+        "-frames:v", str(frames),
         "-filter_complex",
-        f"[0:v]{bg}[bg];[1:v]{fg}[fg];[bg][fg]overlay=(main_w-overlay_w)/2:(main_h-overlay_h)/2",
+        f"[0:v]{bg}[bg];[1:v]{fg}[fg];"
+        f"[bg][fg]overlay=(main_w-overlay_w)/2:(main_h-overlay_h)/2,fps={R.fps}",
         "-pix_fmt", "yuv420p", str(out),
     ])
 
@@ -114,20 +131,50 @@ def overlay_image(clip: Path, png: Path | None, out: Path) -> None:
     ])
 
 
-def attach_audio(clip: Path, audio: Path | None, out: Path, seconds: float) -> None:
-    """Give a video clip a narration track, padded/truncated to exactly `seconds`."""
+def scene_voice_wav(
+    audio: Path | None, out: Path, seconds: float, atempo: float = 1.0,
+) -> None:
+    """One scene's narration as PCM WAV of EXACTLY `seconds` (slowed, end-padded).
+
+    The voice timeline is assembled from these WAVs and encoded to AAC only once at
+    mux time. Encoding each scene to AAC separately and concatenating adds ~20ms of
+    encoder priming per clip — an audio delay that accumulates scene after scene and
+    desyncs the voice from the burned-in captions. PCM has no priming, so scene k's
+    narration starts at exactly the computed boundary.
+    """
     if audio is None:
         _run([
-            "ffmpeg", "-y", "-i", str(clip),
+            "ffmpeg", "-y",
             "-f", "lavfi", "-i", "anullsrc=channel_layout=stereo:sample_rate=44100",
-            "-t", f"{seconds:.3f}", "-c:v", "copy", "-c:a", "aac", "-shortest", str(out),
+            "-t", f"{seconds:.6f}", "-c:a", "pcm_s16le", str(out),
         ])
         return
+    af = f"atempo={atempo:.3f},apad=whole_dur={seconds:.6f},atrim=end={seconds:.6f}"
     _run([
-        "ffmpeg", "-y", "-i", str(clip), "-i", str(audio),
-        "-filter_complex", f"[1:a]apad=whole_dur={seconds:.3f}[a]",
-        "-map", "0:v:0", "-map", "[a]",
-        "-t", f"{seconds:.3f}", "-c:v", "copy", "-c:a", "aac", str(out),
+        "ffmpeg", "-y", "-i", str(audio),
+        "-af", af, "-ar", "44100", "-ac", "2", "-c:a", "pcm_s16le", str(out),
+    ])
+
+
+def concat_wavs(wavs: list[Path], out: Path) -> None:
+    """Concatenate same-format PCM WAVs into one continuous voice track."""
+    listfile = out.with_suffix(".txt")
+    listfile.write_text(
+        "".join(f"file '{w.resolve()}'\n" for w in wavs), encoding="utf-8"
+    )
+    _run([
+        "ffmpeg", "-y", "-f", "concat", "-safe", "0", "-i", str(listfile),
+        "-c", "copy", str(out),
+    ])
+    listfile.unlink(missing_ok=True)
+
+
+def mux(video: Path, audio: Path, out: Path) -> None:
+    """Mux a (silent) video with an audio track, encoding the audio to AAC once."""
+    _run([
+        "ffmpeg", "-y", "-i", str(video), "-i", str(audio),
+        "-map", "0:v:0", "-map", "1:a:0",
+        "-c:v", "copy", "-c:a", "aac", "-shortest", str(out),
     ])
 
 

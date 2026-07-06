@@ -1,7 +1,9 @@
 """Command-line interface: `python -m historygen <command>`.
 
 Commands:
-  new "<topic>"          create a project + generate the script (review checkpoint)
+  new "<topic>" [--genre historical|sociological] [--language X] [--gender male|female]
+                [--orientation vertical|horizontal|square] [--minutes N]
+                          create a project + generate the script (review checkpoint)
   run <slug>             run the full pipeline (resumable; skips fresh stages)
   run <slug> --stage X   run only stage X (script|narration|visuals|captions|music|assemble)
   run <slug> --force     ignore the cache and regenerate everything
@@ -17,9 +19,10 @@ from __future__ import annotations
 import argparse
 import sys
 
-from historygen.config import PROJECTS_DIR, SETTINGS
+from historygen.config import PROJECTS_DIR, SETTINGS, apply_project_render
 from historygen.manifest import Manifest
 from historygen.pipeline import STAGE_NAMES, run_all
+from historygen.schemas import Genre
 from historygen.stages import captions, music, narration, script, translate
 from historygen.stages import assemble as assemble_stage
 
@@ -30,6 +33,12 @@ def _cmd_new(args: argparse.Namespace) -> int:
         manifest.project.language = args.language
     if args.gender:
         manifest.project.voice_gender = args.gender
+    if args.genre:
+        manifest.project.genre = Genre(args.genre)
+    if args.orientation:
+        manifest.project.orientation = args.orientation
+    if args.minutes:
+        manifest.project.target_seconds = int(round(args.minutes * 60))
     manifest.save()
     print(f"Created project '{manifest.slug}' at {manifest.dir}")
     script.run(manifest)
@@ -65,6 +74,8 @@ def _cmd_status(args: argparse.Namespace) -> int:
     p = manifest.project
     print(f"Project: {p.slug}")
     print(f"Topic:   {p.topic}")
+    print(f"Genre:   {p.genre.value}")
+    print(f"Format:  {p.orientation}, ~{p.target_seconds}s")
     print(f"Title:   {p.title or '(not generated)'}")
     print(f"Scenes:  {len(p.scenes)}")
     print(f"Stages done: {', '.join(manifest.stage_cache) or '(none)'}")
@@ -77,6 +88,7 @@ def _cmd_status(args: argparse.Namespace) -> int:
 
 def _cmd_translate(args: argparse.Namespace) -> int:
     manifest = translate.clone_translated(args.slug, args.topic, args.language)
+    apply_project_render(manifest.project.orientation, manifest.project.target_seconds)
     print(
         f"\nCreated '{manifest.slug}'. Now generating narration/captions/music/assemble..."
     )
@@ -107,6 +119,18 @@ def build_parser() -> argparse.ArgumentParser:
     p_new.add_argument("topic", help="documentary topic, e.g. \"Osmanlı'nın kuruluşu\"")
     p_new.add_argument("--language", default="tr", help="script + voice language code (default: tr)")
     p_new.add_argument("--gender", choices=["male", "female"], default="female", help="voice gender")
+    p_new.add_argument(
+        "--genre", choices=[g.value for g in Genre], default="historical",
+        help="video style (default: historical)",
+    )
+    p_new.add_argument(
+        "--orientation", choices=["vertical", "horizontal", "square"], default="vertical",
+        help="frame shape: vertical 9:16 (default), horizontal 16:9, or square",
+    )
+    p_new.add_argument(
+        "--minutes", type=float, default=None,
+        help="target spoken length in minutes (default: ~0.9 = a <60s Short)",
+    )
     p_new.set_defaults(func=_cmd_new)
 
     p_run = sub.add_parser("run", help="run the pipeline for a project")

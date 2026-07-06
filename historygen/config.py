@@ -38,23 +38,32 @@ def assets_dir(slug: str) -> Path:
 # --- render settings (9:16 vertical Shorts) --------------------------------
 
 
-@dataclass(frozen=True)
+# Mutable (not frozen): `apply_project_render()` sets these per project at run time,
+# so a project can be vertical Shorts or a 16:9 long-form video.
+@dataclass
 class RenderSettings:
     width: int = 1080
     height: int = 1920
     fps: int = 30
-    # Hard cap so we stay within Shorts/Reels limits.
+    # Cap used to size/loop the background music. Raised for long-form.
     max_total_seconds: float = 58.0
     language: str = "tr"  # narration language (Turkish)
+    # Silent beat held on each scene AFTER its narration, before the next scene —
+    # so the video doesn't cut the instant a sentence ends.
+    scene_pause: float = 0.8
+    # Narration speed applied at assembly via ffmpeg atempo (pitch preserved).
+    # 1.0 = as spoken; < 1.0 = slower/calmer. Applied without re-generating TTS.
+    voice_speed: float = 0.9
 
 
 @dataclass(frozen=True)
 class Models:
     # Anthropic — script + metadata. claude-opus-4-8 per the claude-api skill.
     anthropic_model: str = "claude-opus-4-8"
-    # ElevenLabs — v3 supports 70+ languages (incl. Turkish and Azerbaijani) and the
-    # same with-timestamps/alignment endpoint as v2.
-    elevenlabs_model: str = "eleven_v3"
+    # ElevenLabs — multilingual v2: supports Turkish and returns RELIABLE per-character
+    # timestamps. (eleven_v3's alignment is approximate, which desyncs karaoke captions
+    # from the voice — do not use v3 while captions depend on word timings.)
+    elevenlabs_model: str = "eleven_multilingual_v2"
     # Fallback voice if none picked yet; override with ELEVENLABS_VOICE_ID.
     elevenlabs_default_voice: str = "mBUB5zYuPwfVE6DTcEjf"  # Eda Atlas (Turkish female)
     # Voice pools by language and gender.
@@ -114,3 +123,23 @@ class Settings:
 
 
 SETTINGS = Settings()
+
+
+_ORIENTATION_DIMS = {
+    "vertical": (1080, 1920),    # 9:16 Shorts/Reels
+    "horizontal": (1920, 1080),  # 16:9 long-form
+    "square": (1080, 1080),      # 1:1
+}
+
+
+def apply_project_render(orientation: str, target_seconds: int) -> None:
+    """Set the global render dimensions + music cap for the current project.
+
+    `RenderSettings` is a shared mutable object, so mutating its attributes here is
+    picked up by ffmpeg_utils (which holds a reference) and by textimg (which reads
+    the dimensions at call time). Call this once before any render stage.
+    """
+    w, h = _ORIENTATION_DIMS.get(orientation, _ORIENTATION_DIMS["vertical"])
+    SETTINGS.render.width = w
+    SETTINGS.render.height = h
+    SETTINGS.render.max_total_seconds = float(max(58, target_seconds + 20))

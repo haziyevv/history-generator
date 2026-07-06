@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import json
 
+from historygen import timing
 from historygen.manifest import Manifest
 
 CHUNK = 3  # words shown together
@@ -24,8 +25,7 @@ def run(manifest: Manifest) -> None:
     events: list[dict] = []
     t0 = 0.0  # running start of the current scene on the global timeline
     for scene in project.scenes:
-        dur = scene.actual_seconds or scene.est_seconds
-        words = scene.word_timings
+        words = timing.scaled_word_timings(scene)  # scaled to the slowed narration
         if words:
             for i in range(0, len(words), CHUNK):
                 chunk = words[i : i + CHUNK]
@@ -37,10 +37,12 @@ def run(manifest: Manifest) -> None:
         else:
             events.append({
                 "start": round(t0, 3),
-                "end": round(t0 + dur, 3),
+                "end": round(t0 + timing.base_audio_seconds(scene), 3),
                 "text": scene.narration,
             })
-        t0 += dur
+        # Advance by the exact per-scene length assemble uses (shared via `timing`),
+        # so caption windows line up with the concatenated scene clips.
+        t0 += timing.scene_seconds(scene)
 
     out = manifest.assets / "captions.json"
     out.write_text(json.dumps(events, ensure_ascii=False, indent=2), encoding="utf-8")

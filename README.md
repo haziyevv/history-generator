@@ -62,6 +62,25 @@ python -m historygen translate <slug> "History of Christianity" --language Engli
 
 The finished video is `projects/<slug>/final.mp4`; metadata is `projects/<slug>/metadata.json`.
 
+### Genres
+
+`new` takes `--genre` to switch the script style and visual palette:
+
+```bash
+python -m historygen new "Osmanlı'nın kuruluşu" --genre historical      # default
+python -m historygen new "Yalnızlık salgını"   --genre sociological
+```
+
+- **historical** (default) — step-by-step history with dates/places; visuals use AI images,
+  archive paintings/maps, and tactical maps. Unchanged from before.
+- **sociological** — social-issue commentary (hook → tension → turn → takeaway). Visuals use
+  photorealistic modern AI images plus **stat cards**: a new `stat_card` visual type rendered
+  locally with Pillow (big number + label, no image API needed). The script model fills
+  `stat_value` / `stat_label` per stat scene.
+
+Everything downstream (narration, captions, music, assembly, `translate`) is genre-agnostic
+and works the same for both.
+
 ### Manually swapping a wrong image
 
 Generated visuals aren't always right (wrong flag, wrong building, etc). To replace one:

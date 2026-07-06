@@ -10,6 +10,7 @@ from __future__ import annotations
 
 from collections.abc import Callable
 
+from historygen.config import apply_project_render
 from historygen.manifest import Manifest
 from historygen.stages import (
     assemble,
@@ -34,6 +35,8 @@ STAGE_NAMES = [name for name, _ in STAGES]
 
 
 def run_all(manifest: Manifest, only: str | None = None, force: bool = False) -> None:
+    # Set canvas size + music cap for this project (vertical Shorts vs 16:9 long-form).
+    apply_project_render(manifest.project.orientation, manifest.project.target_seconds)
     for name, fn in STAGES:
         if only and name != only:
             continue

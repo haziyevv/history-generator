@@ -11,15 +11,19 @@ import requests
 
 from historygen.config import SETTINGS
 from historygen.manifest import Manifest, input_hash
+from historygen.schemas import Genre
 
 MUSIC_API = "https://api.elevenlabs.io/v1/music"
+# ElevenLabs Music accepts 10-300s. For long-form we generate a shorter bed and let
+# the assemble stage loop it (mix_music uses -stream_loop -1) — cheaper and faster.
+MUSIC_MAX_MS = 120_000
+MUSIC_MIN_MS = 10_000
 
 
-def _total_seconds(manifest: Manifest) -> float:
-    total = sum(
-        (s.actual_seconds or s.est_seconds) for s in manifest.project.scenes
-    )
-    return min(total, SETTINGS.render.max_total_seconds)
+def _length_ms(manifest: Manifest) -> int:
+    total = sum((s.actual_seconds or s.est_seconds) for s in manifest.project.scenes)
+    ms = int(total * 1000)
+    return max(MUSIC_MIN_MS, min(ms, MUSIC_MAX_MS))
 
 
 def run(manifest: Manifest) -> None:
@@ -33,12 +37,19 @@ def run(manifest: Manifest) -> None:
         manifest.save()
         return
 
-    cues = ", ".join(s.audio_cue for s in project.scenes if s.audio_cue) or "epic history"
-    prompt = (
-        f"Instrumental cinematic documentary score for a short about: {project.topic}. "
-        f"Mood arc: {cues}. No vocals, builds to a triumphant finale."
-    )
-    length_ms = int(_total_seconds(manifest) * 1000)
+    cues = ", ".join(s.audio_cue for s in project.scenes if s.audio_cue)
+    if project.genre == Genre.SOCIOLOGICAL:
+        prompt = (
+            f"Instrumental, reflective, slightly melancholic ambient score for a "
+            f"documentary about: {project.topic}. Mood arc: {cues or 'contemplative, hopeful'}. "
+            "Sparse piano and soft pads, no vocals, understated and emotional."
+        )
+    else:
+        prompt = (
+            f"Instrumental cinematic documentary score for a video about: {project.topic}. "
+            f"Mood arc: {cues or 'epic history'}. No vocals, builds to a triumphant finale."
+        )
+    length_ms = _length_ms(manifest)
     h = input_hash("music", prompt, length_ms)
     out = manifest.assets / "music.mp3"
     if manifest.is_fresh("music", h) and out.exists():

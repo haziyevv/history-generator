@@ -15,12 +15,18 @@ from typing import Any, Optional
 from pydantic import BaseModel, Field
 
 
+class Genre(str, Enum):
+    HISTORICAL = "historical"        # step-by-step history with dates/places
+    SOCIOLOGICAL = "sociological"    # social-issue commentary, anchored by stats
+
+
 class VisualType(str, Enum):
     AI_IMAGE = "ai_image"            # generate a still (Flux) — atmosphere, portraits
     AI_VIDEO = "ai_video"           # generate motion (image->video) — battle action
     ARCHIVE_PAINTING = "archive_painting"  # public-domain painting via Wikimedia
     ARCHIVE_MAP = "archive_map"     # historical map via Wikimedia
     TACTICAL_MAP = "tactical_map"   # base map + animated troop arrows
+    STAT_CARD = "stat_card"         # locally-rendered data card (big number + label)
 
 
 class VisualDifficulty(str, Enum):
@@ -40,6 +46,9 @@ class Scene(BaseModel):
     visual_prompt: str
     visual_type: VisualType
     visual_difficulty: VisualDifficulty = VisualDifficulty.EASY
+    # Stat-card only: the big number and its short caption (e.g. "%73", "yalnız hisseden gençler").
+    stat_value: str = ""
+    stat_label: str = ""
     # Optional cue describing the desired SFX / music mood for this beat.
     audio_cue: str = ""
     # Script's estimate; replaced by the real narration length after TTS.
@@ -63,6 +72,9 @@ class Project(BaseModel):
     voice_id: Optional[str] = None       # locked in on first narration run
     voice_gender: str = "female"          # male | female
     language: str = "tr"                  # ISO 639-1 — drives both script and voice
+    genre: Genre = Genre.HISTORICAL       # drives the script style + visual palette
+    orientation: str = "vertical"         # vertical (9:16) | horizontal (16:9) | square
+    target_seconds: int = 55              # desired total spoken length (drives scene count)
     music_asset: Optional[str] = None
     captions_file: Optional[str] = None
     final_video: Optional[str] = None
@@ -98,6 +110,14 @@ def script_output_schema() -> dict[str, Any]:
                             "type": "string",
                             "enum": [v.value for v in VisualType],
                         },
+                        "stat_value": {
+                            "type": "string",
+                            "description": "stat_card only: the big number, e.g. '%73' or '3×'. Empty otherwise.",
+                        },
+                        "stat_label": {
+                            "type": "string",
+                            "description": "stat_card only: a few words under the number. Empty otherwise.",
+                        },
                         "visual_difficulty": {
                             "type": "string",
                             "enum": ["easy", "medium", "hard"],
@@ -121,6 +141,8 @@ def script_output_schema() -> dict[str, Any]:
                         "on_screen_text",
                         "visual_prompt",
                         "visual_type",
+                        "stat_value",
+                        "stat_label",
                         "visual_difficulty",
                         "audio_cue",
                         "est_seconds",

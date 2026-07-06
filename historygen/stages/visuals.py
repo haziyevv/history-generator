@@ -63,12 +63,22 @@ def _wikimedia_image(query: str, dest) -> bool:
     return False
 
 
+def _fal_image_size() -> str:
+    """Map the current canvas orientation to a fal image_size enum."""
+    w, h = SETTINGS.render.width, SETTINGS.render.height
+    if w > h:
+        return "landscape_16_9"
+    if h > w:
+        return "portrait_16_9"
+    return "square_hd"
+
+
 def _fal_image(prompt: str, dest) -> bool:
     try:
         import fal_client
         result = fal_client.subscribe(
             FAL_MODEL,
-            arguments={"prompt": prompt},
+            arguments={"prompt": prompt, "image_size": _fal_image_size()},
         )
         url = result["images"][0]["url"]
         return _download(url, dest)
@@ -81,7 +91,8 @@ def _fal_image(prompt: str, dest) -> bool:
 
 def _scene_hash(scene: Scene) -> str:
     return hashlib.sha256(
-        f"{scene.visual_type}|{scene.visual_prompt}|{FAL_MODEL}".encode()
+        f"{scene.visual_type}|{scene.visual_prompt}|{scene.stat_value}|"
+        f"{scene.stat_label}|{FAL_MODEL}".encode()
     ).hexdigest()[:16]
 
 
@@ -109,7 +120,16 @@ def run(manifest: Manifest) -> None:
         scene.visual_is_video = False
         dest = manifest.assets / f"visual_{scene.id:02d}.jpg"
 
-        if vt in (VisualType.AI_IMAGE, VisualType.AI_VIDEO):
+        if vt == VisualType.STAT_CARD:
+            from historygen import textimg
+            value = scene.stat_value or scene.on_screen_text or ""
+            label = scene.stat_label or (scene.visual_prompt[:40] if not scene.stat_value else "")
+            print(f"  visuals: scene {scene.id} stat_card '{value}' (local render)...")
+            textimg.stat_card(dest, value, label)
+            scene.visual_asset = str(dest)
+            ok = True
+
+        elif vt in (VisualType.AI_IMAGE, VisualType.AI_VIDEO):
             print(f"  visuals: scene {scene.id} → {FAL_MODEL}...")
             ok = _fal_image(scene.visual_prompt, dest)
             if ok:
