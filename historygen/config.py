@@ -61,14 +61,21 @@ class Models:
     # Anthropic — script + metadata. claude-opus-4-8 per the claude-api skill.
     anthropic_model: str = "claude-opus-4-8"
     # ElevenLabs — multilingual v2: supports Turkish and returns RELIABLE per-character
-    # timestamps. (eleven_v3's alignment is approximate, which desyncs karaoke captions
-    # from the voice — do not use v3 while captions depend on word timings.)
+    # timestamps, so karaoke captions stay in sync over long runtimes.
     elevenlabs_model: str = "eleven_multilingual_v2"
+    # Shorts (vertical) trade caption precision for v3's expressiveness: v3's alignment
+    # is approximate, but over a <60s clip the drift stays small enough to accept.
+    elevenlabs_model_shorts: str = "eleven_v3"
     # Fallback voice if none picked yet; override with ELEVENLABS_VOICE_ID.
     elevenlabs_default_voice: str = "mBUB5zYuPwfVE6DTcEjf"  # Eda Atlas (Turkish female)
     # Voice pools by language and gender.
     elevenlabs_voices: dict = field(default_factory=lambda: {
         "tr": {
+            "male":   ["fXhoW006nc5Wf8xkGVSy"],        # Turkish male
+            "female": ["mBUB5zYuPwfVE6DTcEjf"],        # Eda Atlas
+        },
+        # Azerbaijani: no dedicated voices yet — reuse the Turkish ones (closest match).
+        "az": {
             "male":   ["fXhoW006nc5Wf8xkGVSy"],        # Turkish male
             "female": ["mBUB5zYuPwfVE6DTcEjf"],        # Eda Atlas
         },
@@ -82,6 +89,9 @@ class Models:
     })
     # OpenAI — image generation.
     openai_image_model: str = "gpt-image-2"
+
+    def elevenlabs_model_for(self, orientation: str) -> str:
+        return self.elevenlabs_model_shorts if orientation == "vertical" else self.elevenlabs_model
 
 
 @dataclass(frozen=True)

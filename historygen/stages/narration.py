@@ -15,6 +15,7 @@ import hashlib
 from historygen.config import SETTINGS
 from historygen.ffmpeg_utils import have_ffmpeg, probe_duration
 from historygen.manifest import Manifest
+from historygen.textnorm import expand_roman_numerals
 
 
 def _words_from_chars(chars, starts, ends) -> list[dict]:
@@ -36,14 +37,14 @@ def _words_from_chars(chars, starts, ends) -> list[dict]:
     return words
 
 
-def _synthesize(scene, voice: str, out_path) -> tuple[float, list[dict]]:
+def _synthesize(scene, text: str, voice: str, model: str, out_path) -> tuple[float, list[dict]]:
     from elevenlabs.client import ElevenLabs
 
     client = ElevenLabs(api_key=SETTINGS.elevenlabs_api_key)
     response = client.text_to_speech.convert_with_timestamps(
         voice_id=voice,
-        text=scene.narration,
-        model_id=SETTINGS.models.elevenlabs_model,
+        text=text,
+        model_id=model,
         output_format="mp3_44100_128",
         voice_settings={"stability": 0.5, "similarity_boost": 0.75},
     )
@@ -89,17 +90,21 @@ def run(manifest: Manifest) -> None:
         return
 
     voice = _pick_voice(manifest)
+    model = SETTINGS.models.elevenlabs_model_for(project.orientation)
     for scene in project.scenes:
         out = manifest.assets / f"narration_{scene.id:02d}.mp3"
+        # Spoken text, not scene.narration: Roman numerals become ordinal words so
+        # the TTS pronounces them (captions follow via the returned alignment).
+        tts_text = expand_roman_numerals(scene.narration, project.language)
         text_hash = hashlib.sha256(
-            f"{scene.narration}|{voice}|{SETTINGS.models.elevenlabs_model}".encode()
+            f"{tts_text}|{voice}|{model}".encode()
         ).hexdigest()[:16]
         sidecar = out.with_suffix(".hash")
         if out.exists() and sidecar.exists() and sidecar.read_text() == text_hash:
             print(f"  narration: scene {scene.id} cached")
             continue
-        print(f"  narration: scene {scene.id} synthesizing...")
-        duration, words = _synthesize(scene, voice, out)
+        print(f"  narration: scene {scene.id} synthesizing ({model})...")
+        duration, words = _synthesize(scene, tts_text, voice, model, out)
         scene.narration_audio = str(out)
         scene.actual_seconds = duration
         scene.word_timings = words

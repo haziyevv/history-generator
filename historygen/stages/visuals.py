@@ -1,9 +1,13 @@
 """Stage 3 — visuals.
 
 Per scene, produce one visual asset:
-  ai_image / ai_video      -> fal-ai/flux-2-pro
-  archive_painting/map     -> Wikimedia Commons (real historical media)
+  ai_image / ai_video      -> fal-ai/flux-2-pro, Wikimedia fallback
+  archive_painting/map     -> Wikimedia Commons (real historical media), fal fallback
   tactical_map             -> Wikimedia first, fal fallback
+
+If every source fails, a scene card (dark full-frame card with the scene's on-screen
+text) is rendered locally so the video never ships a bare placeholder; the scene stays
+uncached so real sources are retried on the next run.
 
 Each scene is cached by an input-hash sidecar, so re-runs only regenerate scenes whose
 prompt/type changed.
@@ -132,6 +136,11 @@ def run(manifest: Manifest) -> None:
         elif vt in (VisualType.AI_IMAGE, VisualType.AI_VIDEO):
             print(f"  visuals: scene {scene.id} → {FAL_MODEL}...")
             ok = _fal_image(scene.visual_prompt, dest)
+            if not ok:
+                # AI prompts carry style words that hurt search; use only the subject.
+                query = " ".join(scene.visual_prompt.split()[:10])
+                print(f"  visuals: scene {scene.id} fallback → Wikimedia...")
+                ok = _wikimedia_image(query, dest)
             if ok:
                 scene.visual_asset = str(dest)
 
@@ -139,6 +148,9 @@ def run(manifest: Manifest) -> None:
             kind = "painting" if vt == VisualType.ARCHIVE_PAINTING else "map"
             print(f"  visuals: scene {scene.id} archive {kind} via Wikimedia...")
             ok = _wikimedia_image(f"{scene.visual_prompt} {kind}", dest)
+            if not ok:
+                print(f"  visuals: scene {scene.id} fallback → {FAL_MODEL}...")
+                ok = _fal_image(scene.visual_prompt, dest)
             if ok:
                 scene.visual_asset = str(dest)
 
@@ -152,8 +164,15 @@ def run(manifest: Manifest) -> None:
                 scene.visual_asset = str(dest)
 
         if not ok:
-            print(f"  visuals: scene {scene.id} — no asset, will use placeholder")
-            scene.visual_asset = None
+            # Last resort: a locally rendered card that fits the scene. The hash
+            # sidecar is deliberately NOT written, so the next run retries the
+            # real sources and replaces the card if they recover.
+            from historygen import textimg
+            heading = scene.on_screen_text.strip() or project.title
+            sub = project.title if scene.on_screen_text.strip() else ""
+            print(f"  visuals: scene {scene.id} — all sources failed, rendering scene card")
+            textimg.scene_card(dest, heading, sub)
+            scene.visual_asset = str(dest)
         else:
             sidecar.write_text(h)
         manifest.save()

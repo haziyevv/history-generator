@@ -124,5 +124,40 @@ def stat_card(
     return out
 
 
+def scene_card(
+    out: Path, heading: str, subheading: str = "",
+    bg: tuple[int, int, int] = (17, 20, 33), accent: tuple[int, int, int] = (232, 93, 79),
+) -> Path:
+    """Full-frame fallback visual for a scene whose image could not be generated.
+
+    Same visual language as `stat_card` (dark ground, accent bar) so it blends into
+    the video instead of reading as an error. Rendered locally, so it always works.
+    """
+    W, H = SETTINGS.render.width, SETTINGS.render.height
+    img = Image.new("RGB", (W, H), bg)
+    draw = ImageDraw.Draw(img)
+
+    heading = heading.strip() or "•"
+    # Shrink the heading if it's long so one line never overflows after wrapping.
+    size = 140
+    while size > 72 and draw.textlength(heading, font=_font(size)) > W * 1.6:
+        size -= 12
+    _draw_centered(img, heading, size=size, target_y_frac=0.42, stroke=0)
+
+    bar_w, bar_h = int(W * 0.22), 12
+    x0 = (W - bar_w) // 2
+    y0 = int(H * 0.53)
+    draw.rounded_rectangle([x0, y0, x0 + bar_w, y0 + bar_h], radius=bar_h // 2, fill=accent)
+
+    if subheading.strip():
+        _draw_centered(
+            img, subheading, size=54, target_y_frac=0.62,
+            fill=_hex((170, 176, 194)), stroke=0, max_w_frac=0.78,
+        )
+
+    img.save(out, quality=92)
+    return out
+
+
 def _hex(rgb: tuple[int, int, int]) -> str:
     return "#%02x%02x%02x" % rgb
